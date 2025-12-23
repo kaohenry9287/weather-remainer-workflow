@@ -1,0 +1,285 @@
+{
+  "name": "Weather reminder workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "daysInterval": "={{ 1 }}",
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -224,
+        0
+      ],
+      "id": "513de4f8-338a-4c41-b5d9-819211c702cc",
+      "name": "Schedule Trigger",
+      "alwaysOutputData": false,
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "=https://api.openweathermap.org/data/2.5/weather?q={{$json.city}}&units=metric&appid=a306fbb6406cb741864bc4e3aa3ac7cf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        112,
+        0
+      ],
+      "id": "54270622-3f4f-4861-aec4-59d9e5771590",
+      "name": "HTTP Request",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -192,
+        400
+      ],
+      "id": "66b9ebe6-9c0b-46a0-ad0e-edb4986c806e",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "RVQEy9k1jFgiVGnV",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a friendly weather assistant. Analyze the weather data and provide output in this EXACT format:\n\n[Based on the temperature and conditions, suggest 2-3 specific clothing items in a short phrase. Example: \"Light jacket, long sleeves, comfortable pants\"]\n\n---\n\nWrite 1 friendly closing sentence wishing them a good day. Do not use any title or label.\n\n---\n\nNow generate this report for:\n- City: {{ $json.city }}\n- Temperature: {{ $json.temperature }}°{{ $json.temperature_unit }}\n- Condition: {{ $json.condition }}\n- Humidity: {{ $json.humidity }}%\n- Wind Speed: {{ $json.wind_speed }} km/hr\n- Alert: {{ $json.alert_type }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -192,
+        224
+      ],
+      "id": "bfbe63ec-f418-4216-aaa9-829db371334c",
+      "name": "Agent_wearing advice"
+    },
+    {
+      "parameters": {
+        "tableId": "=weather_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "city",
+              "fieldValue": "={{ $('Parse data').item.json.city }}"
+            },
+            {
+              "fieldId": "temperature",
+              "fieldValue": "={{ $('Parse data').item.json.temperature }}"
+            },
+            {
+              "fieldId": "temperatue_unit",
+              "fieldValue": "={{ $('Parse data').item.json.temperature_unit }}"
+            },
+            {
+              "fieldId": "condition",
+              "fieldValue": "={{ $('Parse data').item.json.condition }}"
+            },
+            {
+              "fieldId": "humidity",
+              "fieldValue": "={{ $('Parse data').item.json.humidity }}"
+            },
+            {
+              "fieldId": "wind_speed",
+              "fieldValue": "={{ $('Parse data').item.json.wind_speed }}"
+            },
+            {
+              "fieldId": "alert_type",
+              "fieldValue": "={{ $('Parse data').item.json.alert_type }}"
+            },
+            {
+              "fieldId": "raw_response",
+              "fieldValue": "={{ $('Parse data').item.json.raw_response }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        128,
+        224
+      ],
+      "id": "d5d646f6-73ba-4ef0-938f-6654a0f6bf9b",
+      "name": "New row in able: weather_logs",
+      "credentials": {
+        "supabaseApi": {
+          "id": "Ghk16v579KQ5zySt",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of $input.all()) {\n  const data = Array.isArray(item.json) ? item.json[0] : item.json;\n  \n  // Extract the values we need\n  const city = data.name;\n  const temperature = data.main.temp;\n  const humidity = data.main.humidity;\n  const windSpeed = data.wind.speed;\n  const condition = data.weather[0].main;\n  const description = data.weather[0].description;\n  \n  // Map condition to emoji\n  const conditionEmoji = {\n    \"Clouds\": \"☁️\",\n    \"Rain\": \"🌧️\",\n    \"Clear\": \"☀️\",\n    \"Sunny\": \"☀️\",\n    \"Thunderstorm\": \"⛈️\",\n    \"Snow\": \"❄️\",\n    \"Drizzle\": \"🌦️\",\n    \"Mist\": \"🌫️\",\n    \"Fog\": \"🌫️\",\n    \"Windy\": \"💨\"\n  };\n  \n  const emoji = conditionEmoji[condition] || \"🌤️\"; // default emoji\n  \n  // Determine alert type\n  let alertType = \"None\"\n  let alertColor = \"#4CAF50\"; // Default grreen\n  const conditionLower = condition.toLowerCase();\n  const descriptionLower = description.toLowerCase();\n  \n  if (conditionLower.includes(\"rain\") || conditionLower.includes(\"snow\") || \n      conditionLower.includes(\"drizzle\") || conditionLower.includes(\"storm\") || \n      descriptionLower.includes(\"rain\") || descriptionLower.includes(\"snow\")) {\n    alertType = \"Precipitation Alert\";\n    alertColor = \"#2196F3\"; // Blue\n  } else if (temperature > 32) {\n    alertType = \"Heat Alert\";\n    alertColor = \"#FF6B6B\"; // Red/Orange\n  } else if (temperature < 0) {\n    alertType = \"Frost Alert\";\n    alertColor = \"#64B5F6\"; // Light blue\n  }\n  \n  // Create formatted summary\n  const summary = `Daily Weather - ${city}\\nTemp: ${temperature}°C\\nHumidity: ${humidity}%\\nWind: ${windSpeed} km/hr\\nAlert: ${alertType}`;\n  \n  // Add all this to the output\n  item.json = {\n    city: city,\n    temperature: temperature,\n    temperature_unit: \"C\",\n    condition: condition,\n    condition_emoji: emoji,\n    humidity: humidity,\n    wind_speed: windSpeed,\n    alert_type: alertType,\n    alert_color: alertColor,\n    summary: summary,\n    raw_response: data\n  };\n}\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        0
+      ],
+      "id": "59b1dbe5-b204-4882-bf82-e7f0b8d89d56",
+      "name": "Parse data"
+    },
+    {
+      "parameters": {
+        "sendTo": "kaohenry9287@gmail.com",
+        "subject": "=Daily Weather for {{ $json.city }} – {{$('Schedule Trigger').item.json['Readable date']}}",
+        "message": "=<div style=\"font-family: Arial, sans-serif; background-color: #E3F2FD; padding: 20px; border-radius: 10px; max-width: 600px; margin: 0 auto;\">\n  \n  <!-- Header -->\n  <div style=\"text-align: center; margin-bottom: 30px;\">\n    <h1 style=\"color: #00BCD4; font-size: 28px; margin: 0;\">📍 {{ $json.city }} Weather Report</h1>\n    <p style=\"color: #666; font-size: 14px; margin: 10px 0 0 0;\">{{ $('Schedule Trigger').item.json['Readable date'] }}</p>\n  </div>\n\n  <!-- Current Conditions Card -->\n  <div style=\"background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;\">\n    <h2 style=\"color: #00BCD4; font-size: 20px; margin-top: 0;\">Current Conditions</h2>\n    \n    <p style=\"margin: 12px 0; font-size: 16px;\">\n      <strong>🌡️ Temperature:</strong> {{ $json.temperature }}°{{$json.temperatue_unit}}\n    </p>\n    \n    <p style=\"margin: 12px 0; font-size: 16px;\">\n      <strong>{{$('Parse data').item.json.condition_emoji}} Conditions:</strong> {{ $json.condition }}\n    </p>\n    \n    <p style=\"margin: 12px 0; font-size: 16px;\">\n      <strong>💧 Humidity:</strong> {{ $json.humidity }}%\n    </p>\n    \n    <p style=\"margin: 12px 0; font-size: 16px;\">\n      <strong>💨 Wind:</strong> {{ $json.wind_speed }} km/hr\n    </p>\n  </div>\n\n  <!-- Alert Banner -->\n<div style=\"padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-weight: bold; color: white; background-color: {{$('Parse data').item.json.alert_color}};\">\n  ⚠️ Alert: {{ $json.alert_type }}\n</div>\n\n  <!-- Clothing Advice -->\n  <div style=\"background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;\">\n    <h3 style=\"color: #00BCD4; font-size: 18px; margin-top: 0;\">👕 What to Wear</h3>\n    <p style=\"margin: 0; font-size: 16px; color: #333;\">{{$('Agent_wearing advice').item.json.output}}</p>\n  </div>\n\n  <!-- Closing Message -->\n  <div style=\"text-align: center; margin-top: 30px; color: #00BCD4; font-size: 16px; font-weight: bold;\">\n    Have a wonderful day and enjoy your time outdoors!\n  </div>\n\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        224
+      ],
+      "id": "cca3dcd6-fb9f-4d90-80b0-c4a70ac082d7",
+      "name": "Send email",
+      "webhookId": "424855ca-7ab0-4d7b-9ac1-21cf64cdc72b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ELVjWEAQBmlMu9dl",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "228d6634-9120-4534-89be-40f106d6c3ac",
+              "name": "city",
+              "value": "London",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -48,
+        0
+      ],
+      "id": "0dd69d8d-fc21-4c88-b0a0-c55eeff4d345",
+      "name": "Set city variable"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set city variable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Parse data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent_wearing advice",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent_wearing advice": {
+      "main": [
+        [
+          {
+            "node": "New row in able: weather_logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New row in able: weather_logs": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse data": {
+      "main": [
+        [
+          {
+            "node": "Agent_wearing advice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set city variable": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "d5184583-2424-4649-8221-9de3b12515b0",
+  "meta": {
+    "instanceId": "1ba92a7ea4aaa62234100931429118a4714ada70eddbfd331a143bebe0cb989d"
+  },
+  "id": "PpI79hIssl7KlLVu",
+  "tags": []
+}
